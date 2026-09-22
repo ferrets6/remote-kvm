@@ -19,6 +19,15 @@ Swap in a different capture card, a different microcontroller, an IP-KVM chip, w
 — add a folder under `drivers/`, a compose service, and a proxy line. Nothing else
 changes.
 
+## Requirements
+
+- Docker + Docker Compose
+- A V4L2 UVC capture device on the host (`/dev/videoN`)
+- At least one working HID driver: a
+  [unifying-cc2544-radiokey](https://github.com/ferrets6/unifying-cc2544-radiokey)
+  dongle pair, an ESP32-S3 running the companion `esp32-s3-wifi-keyboard` firmware on
+  your LAN, or your own driver written against the contract
+
 ## Running it
 
 ```
@@ -26,8 +35,8 @@ cp .env.example .env   # fill in the driver-specific settings you need
 docker compose up -d --build
 ```
 
-Only the `kvm-web` service publishes a port; everything else stays on the internal
-compose network.
+Open `http://<host>:8093/`. Only the `kvm-web` service publishes a port; everything
+else stays on the internal compose network.
 
 ## Layout
 
