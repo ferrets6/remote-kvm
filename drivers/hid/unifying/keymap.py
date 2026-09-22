@@ -15,3 +15,26 @@ CODE_TO_HID = {
     "ArrowLeft": 0x50, "ArrowDown": 0x51, "ArrowUp": 0x52,
     "Home": 0x4A, "PageUp": 0x4B,
 }
+
+# Literal character -> (HID usage, needs_shift). Used when there's no
+# KeyboardEvent.code to go on (paste: the browser only gives us the resolved
+# text, not which physical keys produced it). US layout, since HID usage
+# codes are positional, not character-based.
+_DIGIT_ROW = {
+    "1": (0x1E, "!"), "2": (0x1F, "@"), "3": (0x20, "#"), "4": (0x21, "$"),
+    "5": (0x22, "%"), "6": (0x23, "^"), "7": (0x24, "&"), "8": (0x25, "*"),
+    "9": (0x26, "("), "0": (0x27, ")"),
+}
+_PUNCT_ROW = {
+    "-": (0x2D, "_"), "=": (0x2E, "+"), "[": (0x2F, "{"), "]": (0x30, "}"),
+    "\\": (0x31, "|"), ";": (0x33, ":"), "'": (0x34, '"'), "`": (0x35, "~"),
+    ",": (0x36, "<"), ".": (0x37, ">"), "/": (0x38, "?"),
+}
+
+CHAR_TO_HID = {" ": (0x2C, False), "\n": (0x28, False), "\t": (0x2B, False)}
+for _c, _hid in {c: 0x04 + i for i, c in enumerate("abcdefghijklmnopqrstuvwxyz")}.items():
+    CHAR_TO_HID[_c] = (_hid, False)
+    CHAR_TO_HID[_c.upper()] = (_hid, True)
+for _unshifted, (_hid, _shifted_ch) in {**_DIGIT_ROW, **_PUNCT_ROW}.items():
+    CHAR_TO_HID[_unshifted] = (_hid, False)
+    CHAR_TO_HID[_shifted_ch] = (_hid, True)

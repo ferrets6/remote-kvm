@@ -64,6 +64,20 @@ mobileInput.addEventListener('input', (e) => {
   mobileInput.value = '';
 });
 
+// Paste: the target is real HID, there's no clipboard on the other end, so
+// intercept the browser's own paste and replay it as a sequence of key
+// events instead. No `code` exists for pasted text (only the browser knows
+// what was pasted, not which physical keys would have produced it) - drivers
+// that need one (unifying) fall back to a literal-character table.
+window.addEventListener('paste', (e) => {
+  e.preventDefault();
+  const text = (e.clipboardData || window.clipboardData).getData('text');
+  for (const ch of text) {
+    send('', ch, 0, true);
+    send('', ch, 0, false);
+  }
+});
+
 // Special-key button row (Esc, Tab, arrows, ...): send a down+up pulse.
 document.getElementById('specials').addEventListener('click', (e) => {
   const code = e.target.dataset.code;

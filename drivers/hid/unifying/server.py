@@ -5,7 +5,7 @@ import logging
 import usb.core
 import websockets
 
-from keymap import CODE_TO_HID
+from keymap import CODE_TO_HID, CHAR_TO_HID
 
 VID = 0x1209
 PID = 0x0030
@@ -34,10 +34,19 @@ def find_tx_dongle():
     return candidates[0]
 
 
-def send_key(code: str, mod: int, down: bool) -> bool:
+def send_key(code: str, key: str, mod: int, down: bool) -> bool:
     hid = CODE_TO_HID.get(code)
+    if hid is None and key:
+        # No usable `code` (e.g. paste: the browser only gives us resolved
+        # text, not which physical keys produced it) - fall back to a
+        # literal-character table instead.
+        entry = CHAR_TO_HID.get(key)
+        if entry:
+            hid, needs_shift = entry
+            if needs_shift:
+                mod |= 0x02
     if hid is None:
-        log.info("no HID mapping for code=%s, ignoring", code)
+        log.info("no HID mapping for code=%s key=%r, ignoring", code, key)
         return False
     dev = find_tx_dongle()
     if dev is None:
@@ -52,7 +61,7 @@ async def handle(ws):
     async for message in ws:
         try:
             event = json.loads(message)
-            send_key(event["code"], int(event.get("mod", 0)), bool(event["down"]))
+            send_key(event.get("code", ""), event.get("key", ""), int(event.get("mod", 0)), bool(event["down"]))
         except (KeyError, ValueError, json.JSONDecodeError) as e:
             log.warning("bad message %r: %s", message, e)
         except usb.core.USBError as e:
