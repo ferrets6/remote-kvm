@@ -9,7 +9,8 @@ function connect(driver) {
   if (ws) ws.close();
   statusEl.textContent = 'connecting…';
   statusEl.className = 'disconnected';
-  ws = new WebSocket(`ws://${location.host}/ws/hid/${driver}`);
+  const wsProto = location.protocol === 'https:' ? 'wss' : 'ws';
+  ws = new WebSocket(`${wsProto}://${location.host}/ws/hid/${driver}`);
   ws.onopen = () => { statusEl.textContent = driver; statusEl.className = 'connected'; };
   ws.onclose = () => { statusEl.textContent = 'disconnected'; statusEl.className = 'disconnected'; };
   ws.onerror = () => { try { ws.close(); } catch (e) {} };

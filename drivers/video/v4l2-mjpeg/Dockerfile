@@ -1,11 +1,10 @@
 FROM debian:trixie-slim
 
-RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg \
+RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg python3 \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
-COPY entrypoint.sh ./
-RUN chmod +x entrypoint.sh
+COPY server.py ./
 
 EXPOSE 8091
-ENTRYPOINT ["./entrypoint.sh"]
+CMD ["python3", "server.py"]
