@@ -1,0 +1,34 @@
+services:
+  kvm-web:
+    build: ./web
+    container_name: kvm-web
+    ports:
+      - "8093:8093"
+    restart: unless-stopped
+    depends_on:
+      - driver-video
+      - driver-hid-unifying
+      - driver-hid-esp32
+
+  driver-video:
+    build: ./drivers/video/v4l2-mjpeg
+    container_name: driver-video
+    devices:
+      - "${VIDEO_DEVICE:-/dev/video0}:/dev/video0"
+    restart: unless-stopped
+
+  driver-hid-unifying:
+    build: ./drivers/hid/unifying
+    container_name: driver-hid-unifying
+    devices:
+      - /dev/bus/usb:/dev/bus/usb
+    device_cgroup_rules:
+      - "c 189:* rmw"
+    restart: unless-stopped
+
+  driver-hid-esp32:
+    build: ./drivers/hid/esp32
+    container_name: driver-hid-esp32
+    environment:
+      ESP32_IP: "${ESP32_IP}"
+    restart: unless-stopped
