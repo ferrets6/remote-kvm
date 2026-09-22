@@ -15,11 +15,15 @@ How the container produces that stream internally is up to the driver.
 The container must run a WebSocket server that accepts JSON text frames:
 
 ```json
-{"code": "<KeyboardEvent.code>", "mod": <modifier bitmask>, "down": true}
+{"code": "<KeyboardEvent.code>", "key": "<KeyboardEvent.key>", "mod": <modifier bitmask>, "down": true}
 ```
 
 - `code`: the browser's `KeyboardEvent.code` (layout-independent), e.g. `"KeyA"`,
-  `"Enter"`, `"ArrowLeft"`, `"F5"`.
+  `"Enter"`, `"ArrowLeft"`, `"F5"`. Use this for raw-HID-usage drivers (the OS on the
+  other end resolves layout itself, same as a real keyboard).
+- `key`: the browser's `KeyboardEvent.key` — the actual, layout/shift-resolved
+  character (e.g. `"a"`, `"A"`, `"!"`). Use this if the driver types literal characters
+  rather than raw HID usage codes.
 - `mod`: bitmask, `ctrl=0x01 shift=0x02 alt=0x04 meta=0x08`.
 - `down`: `true` on keydown, `false` on keyup.
 
