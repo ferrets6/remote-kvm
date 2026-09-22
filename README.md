@@ -25,8 +25,9 @@ changes.
 - A V4L2 UVC capture device on the host (`/dev/videoN`)
 - At least one working HID driver: a
   [unifying-cc2544-radiokey](https://github.com/ferrets6/unifying-cc2544-radiokey)
-  dongle pair, an ESP32-S3 running the companion `esp32-s3-wifi-keyboard` firmware on
-  your LAN, or your own driver written against the contract
+  dongle pair, an ESP32-S3 running
+  [ESP32-S3-wifi-kvm](https://github.com/ferrets6/ESP32-S3-wifi-kvm) on your LAN, or
+  your own driver written against the contract
 
 ## Running it
 
