@@ -6,7 +6,7 @@ import os
 import websockets
 import websockets.exceptions
 
-from keymap import SPECIAL_KEYS, MOD_NAMES
+from keymap import CODE_TO_HID, CHAR_TO_HID
 
 ESP32_IP = os.environ["ESP32_IP"]
 ESP32_URL = f"ws://{ESP32_IP}/ws"
@@ -17,22 +17,21 @@ log = logging.getLogger("esp32")
 esp32_ws = None  # persistent outbound connection, maintained by esp32_link()
 
 
-def mods_prefix(mod: int) -> str:
-    return ",".join(name for bit, name in MOD_NAMES if mod & bit)
-
-
-def to_command(event: dict) -> str | None:
-    if not event.get("down"):
-        return None  # ESP32 side does full press+release per command already
-    code = event.get("code", "")
-    mods = mods_prefix(int(event.get("mod", 0)))
-    if code in SPECIAL_KEYS:
-        name = SPECIAL_KEYS[code]
-        return f"kg:{mods}:{name}" if mods else f"kk:{name}"
-    key = event.get("key", "")
-    if not key or len(key) != 1:
+def to_command(code: str, key: str, mod: int, down: bool) -> str | None:
+    hid = CODE_TO_HID.get(code)
+    if hid is None and key:
+        # No usable `code` (e.g. paste: the browser only gives us resolved
+        # text, not which physical keys produced it) - fall back to a
+        # literal-character table instead.
+        entry = CHAR_TO_HID.get(key)
+        if entry:
+            hid, needs_shift = entry
+            if needs_shift:
+                mod |= 0x02
+    if hid is None:
+        log.info("no HID mapping for code=%s key=%r, ignoring", code, key)
         return None
-    return f"kg:{mods}:{key}" if mods else f"kt:{key}"
+    return f"hr:{mod}:{hid}:{1 if down else 0}"
 
 
 async def esp32_link():
@@ -51,27 +50,16 @@ async def esp32_link():
 
 
 async def handle(browser_ws):
-    # Each `kt:`/`kk:` command is a full, discrete keystroke on the ESP32 side
-    # (it does press+release itself) - unlike raw HID down/up, resending it
-    # for a browser auto-repeat keydown (same physical key still held) types
-    # the character again instead of just "still held". Track which codes are
-    # currently down and ignore repeats until the matching keyup.
-    held: set[str] = set()
     async for message in browser_ws:
         try:
             event = json.loads(message)
         except (ValueError, json.JSONDecodeError) as e:
             log.warning("bad message %r: %s", message, e)
             continue
-        code = event.get("code", "")
-        if event.get("down"):
-            if code and code in held:
-                continue
-            if code:
-                held.add(code)
-        else:
-            held.discard(code)
-        command = to_command(event)
+        command = to_command(
+            event.get("code", ""), event.get("key", ""),
+            int(event.get("mod", 0)), bool(event.get("down")),
+        )
         if command is None:
             continue
         if esp32_ws is None:
