@@ -21,8 +21,23 @@ function send(code, key, mod, down) {
   ws.send(JSON.stringify({ code, key, mod, down }));
 }
 
-function modBitmask(e) {
-  return (e.ctrlKey ? 0x01 : 0) | (e.shiftKey ? 0x02 : 0) | (e.altKey ? 0x04 : 0) | (e.metaKey ? 0x08 : 0);
+// Full HID modifier byte, left/right distinct (AltGr is physically RightAlt) -
+// see drivers/CONTRACT.md. `e.ctrlKey`/`e.shiftKey`/etc. can't tell left from
+// right, so track real state from `code` instead.
+const MOD_BIT_BY_CODE = {
+  ControlLeft: 0x01, ShiftLeft: 0x02, AltLeft: 0x04, MetaLeft: 0x08,
+  ControlRight: 0x10, ShiftRight: 0x20, AltRight: 0x40, MetaRight: 0x80,
+};
+let modMask = 0;
+
+// Updates modMask if `code` is itself a modifier key. Returns true when it
+// was (so the caller still forwards the event - a bare modifier press is a
+// real keyboard event too, see CONTRACT.md).
+function trackModifier(code, down) {
+  const bit = MOD_BIT_BY_CODE[code];
+  if (!bit) return false;
+  modMask = down ? (modMask | bit) : (modMask & ~bit);
+  return true;
 }
 
 driverSelect.addEventListener('change', () => connect(driverSelect.value));
@@ -31,12 +46,14 @@ connect(driverSelect.value);
 // Desktop: capture real keyboard while the page has focus.
 window.addEventListener('keydown', (e) => {
   if (e.target === mobileInput) return; // mobile path handles this separately
-  send(e.code, e.key, modBitmask(e), true);
+  trackModifier(e.code, true);
+  send(e.code, e.key, modMask, true);
   e.preventDefault();
 });
 window.addEventListener('keyup', (e) => {
   if (e.target === mobileInput) return;
-  send(e.code, e.key, modBitmask(e), false);
+  trackModifier(e.code, false);
+  send(e.code, e.key, modMask, false);
   e.preventDefault();
 });
 
@@ -44,10 +61,12 @@ window.addEventListener('keyup', (e) => {
 videoWrap.addEventListener('click', () => mobileInput.focus());
 
 mobileInput.addEventListener('keydown', (e) => {
-  send(e.code, e.key, modBitmask(e), true);
+  trackModifier(e.code, true);
+  send(e.code, e.key, modMask, true);
 });
 mobileInput.addEventListener('keyup', (e) => {
-  send(e.code, e.key, modBitmask(e), false);
+  trackModifier(e.code, false);
+  send(e.code, e.key, modMask, false);
 });
 // Fallback for virtual keyboards that don't fire reliable keydown/keyup:
 // react to the actual inserted character instead, then clear the field.

@@ -24,8 +24,18 @@ The container must run a WebSocket server that accepts JSON text frames:
 - `key`: the browser's `KeyboardEvent.key` — the actual, layout/shift-resolved
   character (e.g. `"a"`, `"A"`, `"!"`). Use this if the driver types literal characters
   rather than raw HID usage codes.
-- `mod`: bitmask, `ctrl=0x01 shift=0x02 alt=0x04 meta=0x08`.
+- `mod`: the standard USB HID modifier byte, one bit per physical modifier key —
+  `LeftCtrl=0x01 LeftShift=0x02 LeftAlt=0x04 LeftGUI=0x08 RightCtrl=0x10 RightShift=0x20
+  RightAlt(AltGr)=0x40 RightGUI=0x80`. Left/right are distinct because a real keyboard
+  distinguishes them too (AltGr is physically RightAlt) — this is not a driver-specific
+  convention, it's the HID spec's own modifier byte layout.
 - `down`: `true` on keydown, `false` on keyup.
+
+A bare modifier press (e.g. just tapping Shift, nothing else) is a real, distinct event
+on a real keyboard too — it updates the modifier byte with no regular key alongside it.
+Send it the same way as any other key: `code` is the modifier's own
+(`"ControlLeft"`, `"AltRight"`, ...), and drivers resolve it to HID usage `0` (the
+standard "no key" sentinel) — the state change lives entirely in `mod`.
 
 What the driver does with that event (radio packet, WebSocket relay to another device,
 anything else) is entirely up to it.

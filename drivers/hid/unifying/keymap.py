@@ -1,6 +1,4 @@
 # Browser KeyboardEvent.code -> USB HID Usage Page 0x07 code.
-# Modifier bits already match the driver contract 1:1 (ctrl=0x01 shift=0x02
-# alt=0x04 meta=0x08), so only regular keys need a table.
 CODE_TO_HID = {
     **{f"Key{c}": 0x04 + i for i, c in enumerate("ABCDEFGHIJKLMNOPQRSTUVWXYZ")},
     **{f"Digit{d}": 0x1E + i for i, d in enumerate("123456789")},
@@ -14,6 +12,11 @@ CODE_TO_HID = {
     "Delete": 0x4C, "End": 0x4D, "PageDown": 0x4E, "ArrowRight": 0x4F,
     "ArrowLeft": 0x50, "ArrowDown": 0x51, "ArrowUp": 0x52,
     "Home": 0x4A, "PageUp": 0x4B,
+    # Bare modifier press/release: no regular key, HID usage 0 (the standard
+    # "no key" sentinel) - the state change lives entirely in `mod`, exactly
+    # like a real keyboard's own report.
+    "ControlLeft": 0, "ShiftLeft": 0, "AltLeft": 0, "MetaLeft": 0,
+    "ControlRight": 0, "ShiftRight": 0, "AltRight": 0, "MetaRight": 0,
 }
 
 # Literal character -> (HID usage, needs_shift). Used when there's no
