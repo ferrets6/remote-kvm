@@ -39,6 +39,11 @@ docker compose up -d --build
 Open `http://<host>:8093/`. Only the `kvm-web` service publishes a port; everything
 else stays on the internal compose network.
 
+**Pasting**: there's no clipboard channel to the target (it only sees a USB keyboard),
+so Ctrl+V is forwarded as a normal keystroke and acts on the *target's* clipboard, like
+RDP would. To type your local clipboard into the target, right-click the video →
+Paste.
+
 ## Layout
 
 ```

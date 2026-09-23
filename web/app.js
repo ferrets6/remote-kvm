@@ -30,44 +30,81 @@ const MOD_BIT_BY_CODE = {
 };
 let modMask = 0;
 
-// Updates modMask if `code` is itself a modifier key. Returns true when it
-// was (so the caller still forwards the event - a bare modifier press is a
-// real keyboard event too, see CONTRACT.md).
-function trackModifier(code, down) {
-  const bit = MOD_BIT_BY_CODE[code];
-  if (!bit) return false;
-  modMask = down ? (modMask | bit) : (modMask & ~bit);
-  return true;
+// Left+right bit pairs for the coarse booleans every KeyboardEvent carries.
+const MOD_BITS_BY_FLAG = [
+  ['ctrlKey', 0x01 | 0x10], ['shiftKey', 0x02 | 0x20],
+  ['altKey', 0x04 | 0x40], ['metaKey', 0x08 | 0x80],
+];
+
+// modMask only learns about modifiers from their own keydown/keyup, so it can
+// drift: a keyup swallowed while the page wasn't focused (Alt+Tab, Ctrl+Tab)
+// leaves a bit stuck, a Ctrl already held when the page gained focus leaves
+// one missing. Every event also carries the browser's own view (e.ctrlKey...),
+// which can't tell left from right but is never stale - use it to repair.
+function syncModifiers(e) {
+  for (const [flag, bits] of MOD_BITS_BY_FLAG) {
+    if (!e[flag]) modMask &= ~bits;
+    else if (!(modMask & bits)) modMask |= bits & -bits; // held but unseen: assume left
+  }
 }
+
+// Codes currently down on the target, so they can all be released if the page
+// loses focus before their keyup arrives.
+const heldCodes = new Set();
+
+// Shared by every keydown/keyup path. A bare modifier press is a real
+// keyboard event too (see CONTRACT.md), so it is forwarded like any key.
+function handleKey(e, down) {
+  const bit = MOD_BIT_BY_CODE[e.code];
+  if (bit) modMask = down ? (modMask | bit) : (modMask & ~bit);
+  syncModifiers(e);
+  if (down) heldCodes.add(e.code); else heldCodes.delete(e.code);
+  send(e.code, e.key, modMask, down);
+}
+
+// Losing focus mid-keypress means the keyups will never reach us: release
+// everything on the target instead of leaving keys/modifiers stuck down.
+window.addEventListener('blur', () => {
+  if (!modMask && !heldCodes.size) return;
+  modMask = 0;
+  for (const code of heldCodes) send(code, '', 0, false);
+  heldCodes.clear();
+  send('ControlLeft', 'Control', 0, false); // usage 0 + mod 0: clears modifier state
+});
 
 driverSelect.addEventListener('change', () => connect(driverSelect.value));
 connect(driverSelect.value);
 
+// Ctrl/Cmd+V (and Shift+Insert) are forwarded to the target like any other
+// key, exactly as RDP/AnyDesk would - the target pastes from ITS clipboard.
+// The browser still fires a `paste` event for them, which must not also type
+// the local clipboard, so remember when the shortcut was last pressed.
+let lastPasteShortcutAt = 0;
+
+function notePasteShortcut(e) {
+  if (((e.ctrlKey || e.metaKey) && e.code === 'KeyV') || (e.shiftKey && e.code === 'Insert')) {
+    lastPasteShortcutAt = performance.now();
+  }
+}
+
 // Desktop: capture real keyboard while the page has focus.
 window.addEventListener('keydown', (e) => {
+  notePasteShortcut(e); // also sees keydowns bubbling up from mobileInput
   if (e.target === mobileInput) return; // mobile path handles this separately
-  trackModifier(e.code, true);
-  send(e.code, e.key, modMask, true);
+  handleKey(e, true);
   e.preventDefault();
 });
 window.addEventListener('keyup', (e) => {
   if (e.target === mobileInput) return;
-  trackModifier(e.code, false);
-  send(e.code, e.key, modMask, false);
+  handleKey(e, false);
   e.preventDefault();
 });
 
 // Mobile: tap the video to open the on-screen keyboard via the hidden input.
 videoWrap.addEventListener('click', () => mobileInput.focus());
 
-mobileInput.addEventListener('keydown', (e) => {
-  trackModifier(e.code, true);
-  send(e.code, e.key, modMask, true);
-});
-mobileInput.addEventListener('keyup', (e) => {
-  trackModifier(e.code, false);
-  send(e.code, e.key, modMask, false);
-});
+mobileInput.addEventListener('keydown', (e) => handleKey(e, true));
+mobileInput.addEventListener('keyup', (e) => handleKey(e, false));
 // Fallback for virtual keyboards that don't fire reliable keydown/keyup:
 // react to the actual inserted character instead, then clear the field.
 mobileInput.addEventListener('input', (e) => {
@@ -83,13 +120,21 @@ mobileInput.addEventListener('input', (e) => {
   mobileInput.value = '';
 });
 
-// Paste: the target is real HID, there's no clipboard on the other end, so
-// intercept the browser's own paste and replay it as a sequence of key
-// events instead. No `code` exists for pasted text (only the browser knows
-// what was pasted, not which physical keys would have produced it) - drivers
-// that need one (unifying) fall back to a literal-character table.
+// Paste (right-click -> Paste): the target is real HID, there's no clipboard
+// channel to it, so the only way to get local text there is to type it.
+// Intercept the browser's paste and replay it as key events. No `code` exists
+// for pasted text (only the browser knows what was pasted, not which physical
+// keys would have produced it) - drivers that need one (unifying) fall back
+// to a literal-character table.
+//
+// The context menu only offers "Paste" on an editable element, so a
+// transparent contenteditable layer covers the video. It never keeps text.
+const pasteLayer = document.getElementById('paste-layer');
+pasteLayer.addEventListener('beforeinput', (e) => e.preventDefault());
+
 window.addEventListener('paste', (e) => {
   e.preventDefault();
+  if (performance.now() - lastPasteShortcutAt < 500) return; // Ctrl+V: forwarded as a key instead
   const text = (e.clipboardData || window.clipboardData).getData('text');
   for (const ch of text) {
     send('', ch, 0, true);
