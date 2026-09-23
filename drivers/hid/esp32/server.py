@@ -51,13 +51,27 @@ async def esp32_link():
 
 
 async def handle(browser_ws):
+    # Each `kt:`/`kk:` command is a full, discrete keystroke on the ESP32 side
+    # (it does press+release itself) - unlike raw HID down/up, resending it
+    # for a browser auto-repeat keydown (same physical key still held) types
+    # the character again instead of just "still held". Track which codes are
+    # currently down and ignore repeats until the matching keyup.
+    held: set[str] = set()
     async for message in browser_ws:
         try:
             event = json.loads(message)
-            command = to_command(event)
         except (ValueError, json.JSONDecodeError) as e:
             log.warning("bad message %r: %s", message, e)
             continue
+        code = event.get("code", "")
+        if event.get("down"):
+            if code and code in held:
+                continue
+            if code:
+                held.add(code)
+        else:
+            held.discard(code)
+        command = to_command(event)
         if command is None:
             continue
         if esp32_ws is None:
