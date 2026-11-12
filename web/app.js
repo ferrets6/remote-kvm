@@ -142,6 +142,19 @@ window.addEventListener('paste', (e) => {
   }
 });
 
+// Video: an <img> doesn't reconnect by itself once its stream ends or fails
+// (driver restarting, 502 from nginx meanwhile), so retry it every 2s.
+const videoImg = document.getElementById('video');
+const reloadVideo = () => { videoImg.src = `/video?t=${Date.now()}`; };
+videoImg.addEventListener('error', () => setTimeout(reloadVideo, 2000));
+
+const restartBtn = document.getElementById('restart-video');
+restartBtn.addEventListener('click', async () => {
+  restartBtn.disabled = true;
+  try { await fetch('/video/restart', { method: 'POST' }); } catch (e) {}
+  setTimeout(() => { reloadVideo(); restartBtn.disabled = false; }, 3000);
+});
+
 // Special-key button row (Esc, Tab, arrows, ...): send a down+up pulse.
 document.getElementById('specials').addEventListener('click', (e) => {
   const code = e.target.dataset.code;

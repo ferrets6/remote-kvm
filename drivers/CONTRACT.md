@@ -10,6 +10,10 @@ The container must serve an MJPEG multipart stream
 That's it — a browser `<img src="...">` can consume it natively, no JS glue needed.
 How the container produces that stream internally is up to the driver.
 
+Optionally, `POST /restart` on the same port makes the driver restart itself (the
+frontend's "Restart video" button). The simplest way is to answer `202` and exit: the
+compose restart policy (`unless-stopped`) starts the container again.
+
 ## `hid/<name>`
 
 The container must run a WebSocket server that accepts JSON text frames:

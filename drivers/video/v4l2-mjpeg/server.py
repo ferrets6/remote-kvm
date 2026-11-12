@@ -5,6 +5,8 @@ import os
 DEVICE = os.environ.get("DEVICE", "/dev/video0")
 VIDEO_SIZE = os.environ.get("VIDEO_SIZE", "1920x1080")
 FRAME_RATE = os.environ.get("FRAME_RATE", "30")
+STALL_TIMEOUT = int(os.environ.get("STALL_TIMEOUT", "5"))
+MAX_RESTART_DELAY = 60
 BOUNDARY = b"--ffmpeg"
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
@@ -31,6 +33,7 @@ def broadcast(frame: bytes) -> None:
 
 
 async def ffmpeg_loop() -> None:
+    delay = 1
     while True:
         proc = await asyncio.create_subprocess_exec(
             "ffmpeg", "-f", "v4l2", "-input_format", "mjpeg",
@@ -39,8 +42,21 @@ async def ffmpeg_loop() -> None:
             stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL,
         )
         buf = b""
+        got_frames = False
+        reason = "exited"
         while True:
-            chunk = await proc.stdout.read(65536)
+            # A UVC transfer error can leave ffmpeg alive but blocked forever on
+            # the device with no output. A source in standby looks the same from
+            # here, so only an ffmpeg that already produced frames is restarted on
+            # silence: after an error the fresh one streams again; with no source
+            # it never gets a first frame and is left waiting (no timeout) until
+            # the source comes back, instead of being restarted in a loop.
+            timeout = STALL_TIMEOUT if got_frames else None
+            try:
+                chunk = await asyncio.wait_for(proc.stdout.read(65536), timeout)
+            except asyncio.TimeoutError:
+                reason = f"stalled (no data for {STALL_TIMEOUT}s)"
+                break
             if not chunk:
                 break
             buf += chunk
@@ -50,16 +66,31 @@ async def ffmpeg_loop() -> None:
                     break
                 frame, buf = buf[:idx], buf[idx:]
                 broadcast(frame)
-        log.warning("ffmpeg exited, restarting in 1s")
-        proc.kill()
-        await asyncio.sleep(1)
+                got_frames = True
+        if proc.returncode is None:
+            proc.kill()
+        await proc.wait()
+        # Back off exponentially while ffmpeg keeps exiting without producing a
+        # single frame (card unplugged, device busy), reset once it worked.
+        delay = 1 if got_frames else min(delay * 2, MAX_RESTART_DELAY)
+        log.warning("ffmpeg %s, restarting in %ds", reason, delay)
+        await asyncio.sleep(delay)
 
 
 async def handle_client(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+    head = b""
     try:
-        await asyncio.wait_for(reader.readuntil(b"\r\n\r\n"), timeout=2)
+        head = await asyncio.wait_for(reader.readuntil(b"\r\n\r\n"), timeout=2)
     except (asyncio.TimeoutError, asyncio.IncompleteReadError):
         pass
+    if head.startswith(b"POST /restart "):
+        # A container can't restart itself without the Docker socket (= root on
+        # the host), but it can exit: the compose restart policy brings it back.
+        log.warning("restart requested over HTTP, exiting")
+        writer.write(b"HTTP/1.1 202 Accepted\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
+        await writer.drain()
+        writer.close()
+        os._exit(1)
     writer.write(
         b"HTTP/1.1 200 OK\r\n"
         b"Content-Type: multipart/x-mixed-replace;boundary=ffmpeg\r\n"
