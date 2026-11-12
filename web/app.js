@@ -149,10 +149,52 @@ const reloadVideo = () => { videoImg.src = `/video?t=${Date.now()}`; };
 videoImg.addEventListener('error', () => setTimeout(reloadVideo, 2000));
 
 const restartBtn = document.getElementById('restart-video');
+const overlay = document.getElementById('video-overlay');
+const overlayText = document.getElementById('video-overlay-text');
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// True once /video actually delivers bytes (driver back up AND frames flowing).
+async function videoIsStreaming() {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 2000);
+  try {
+    const res = await fetch(`/video?t=${Date.now()}`, { signal: ctrl.signal });
+    if (!res.ok) return false;
+    const { value } = await res.body.getReader().read();
+    return !!(value && value.length);
+  } catch (e) {
+    return false;
+  } finally {
+    clearTimeout(timer);
+    ctrl.abort();
+  }
+}
+
 restartBtn.addEventListener('click', async () => {
   restartBtn.disabled = true;
+  overlay.className = '';
+  overlayText.textContent = 'Riavvio in corso…';
+  overlay.hidden = false;
   try { await fetch('/video/restart', { method: 'POST' }); } catch (e) {}
-  setTimeout(() => { reloadVideo(); restartBtn.disabled = false; }, 3000);
+  // Give up after 15 attempts (~15-45s): the driver may be up but the source
+  // off, i.e. no frames to wait for.
+  let ok = false;
+  for (let i = 0; i < 15 && !ok; i++) {
+    await sleep(1000);
+    ok = await videoIsStreaming();
+  }
+  reloadVideo();
+  restartBtn.disabled = false;
+  if (ok) {
+    overlay.hidden = true;
+  } else {
+    overlay.className = 'failed';
+    overlayText.textContent = 'Il video non risponde (sorgente spenta?) — clicca per chiudere';
+  }
+});
+overlay.addEventListener('click', (e) => {
+  e.stopPropagation(); // don't open the mobile keyboard
+  if (overlay.classList.contains('failed')) overlay.hidden = true;
 });
 
 // Special-key button row (Esc, Tab, arrows, ...): send a down+up pulse.
